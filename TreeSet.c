@@ -84,7 +84,7 @@ unsigned int CountBitSize(unsigned int value)
    return count;
 }
 
-// Printing a node
+/* Printing a node using a recursive helper function */
 void PrintTreeHelper (TreeNode *node, int depth, Tree *tree, char *str)
 {
     if (node)
@@ -176,6 +176,7 @@ struct Tree *CreateTree (unsigned int bitmap_size_per_node)
     return tree;
 }
 
+/* Clean up code to destroy a tree and subtending nodes via recursion */
 void DestroyNode (Tree *tree, TreeNode *tree_node)
 {
     if (tree && tree_node)

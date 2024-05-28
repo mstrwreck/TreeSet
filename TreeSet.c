@@ -243,7 +243,7 @@ void DestroyTree(Tree *tree)
     }
 }
 
-/* RightRotate, LeftRotate, FixUpTree - Internal utilities for RedBlack Tree balancing on a given node in the tre. Note delete is not implemented as bitset may only grow. */
+/* RightRotate, LeftRotate, FixUpTree - Internal utilities for RedBlack Tree balancing on a given node in the tree. Note delete is not implemented as bitset may only grow. */
 void RightRotate (Tree *t, TreeNode *partial_tree)
 {
    TreeNode *left = partial_tree->left;

@@ -168,7 +168,7 @@ void TreeInfo (Tree *tree)
    if (tree)
    {
       running_depth_sum = TreeInfoHelper(tree->root, 0);
-      if (tree->size > 1)
+      if (tree->size > 0)
       {
              printf ("size:%d left_depth:%d right_depth:%d Avg depth:(%d/%d) = %f\n", tree->size, FindMaxDepth(tree->root->left, 0), FindMaxDepth(tree->root->right, 0), running_depth_sum, tree->size, (double) running_depth_sum/tree->size);
 #ifdef TESTSET_PROFILE
@@ -244,101 +244,101 @@ void DestroyTree(Tree *tree)
 }
 
 /* RightRotate, LeftRotate, FixUpTree - Internal utilities for RedBlack Tree balancing on a given node in the tre. Note delete is not implemented as bitset may only grow. */
-void RightRotate (Tree *t, TreeNode *pivot_node)
+void RightRotate (Tree *t, TreeNode *partial_tree)
 {
-   TreeNode *left = pivot_node->left;
-   pivot_node->left = left->right;
-   if (pivot_node->left)
-       pivot_node->left->parent = pivot_node;
-   left->parent = pivot_node->parent;
+   TreeNode *left = partial_tree->left;
+   partial_tree->left = left->right;
+   if (partial_tree->left)
+       partial_tree->left->parent = partial_tree;
+   left->parent = partial_tree->parent;
 
-   if (!pivot_node->parent)
+   if (!partial_tree->parent)
    {
        t->root = left;
    }
-   else if (pivot_node == pivot_node->parent->left)
+   else if (partial_tree == partial_tree->parent->left)
    {
-       pivot_node->parent->left = left;
+       partial_tree->parent->left = left;
    }
    else
 
    {
-       pivot_node->parent->right = left;
+       partial_tree->parent->right = left;
    }
-   left->right = pivot_node;
-   pivot_node->parent = left;
+   left->right = partial_tree;
+   partial_tree->parent = left;
 }
 
-void LeftRotate (Tree *t, TreeNode *pivot_node)
+void LeftRotate (Tree *t, TreeNode *partial_tree)
 {
-   TreeNode *right = pivot_node->right;
-   pivot_node->right = right->left;
-   if (pivot_node->right)
-       pivot_node->right->parent = pivot_node;
-   right->parent = pivot_node->parent;
+   TreeNode *right = partial_tree->right;
+   partial_tree->right = right->left;
+   if (partial_tree->right)
+       partial_tree->right->parent = partial_tree;
+   right->parent = partial_tree->parent;
 
-   if (!pivot_node->parent)
+   if (!partial_tree->parent)
    {
        t->root = right;
    }
-   else if (pivot_node == pivot_node->parent->left)
+   else if (partial_tree == partial_tree->parent->left)
    {
-       pivot_node->parent->left = right;
+       partial_tree->parent->left = right;
    }
    else
    {
-       pivot_node->parent->right = right;
+       partial_tree->parent->right = right;
    }
-   right->left = pivot_node;
-   pivot_node->parent = right;
+   right->left = partial_tree;
+   partial_tree->parent = right;
 }
 
-int FixUpTree (Tree *t, TreeNode *pivot_node)
+int FixUpTree (Tree *t, TreeNode *partial_tree)
 {
    TreeNode *parent = NULL;
    TreeNode *grandparent = NULL;
    int work_done = 0;
 
     verbose_printf (1,"Root = %p\n", t->root);
-    while ((pivot_node != t->root) && (pivot_node->RedBlack != BLACK) && (pivot_node->parent->RedBlack == RED))
+    while ((partial_tree != t->root) && (partial_tree->RedBlack != BLACK) && (partial_tree->parent->RedBlack == RED))
     {
        work_done = 1;
-       parent = pivot_node->parent;
-       grandparent = pivot_node->parent->parent;
+       parent = partial_tree->parent;
+       grandparent = partial_tree->parent->parent;
 
        if (!parent || !grandparent)
        {
           break;
        }
 
-       verbose_printf (1," pivot_node:%p[%d], parent:%p[%d], grandparent:%p[%d]\n", pivot_node, (pivot_node!=NULL)?pivot_node->key:-1, parent,
+       verbose_printf (1," partial_tree:%p[%d], parent:%p[%d], grandparent:%p[%d]\n", partial_tree, (partial_tree!=NULL)?partial_tree->key:-1, parent,
                         (parent!=NULL)?parent->key:-1, grandparent, (grandparent!=NULL)?grandparent->key:-1);
-       // Case A: Parent of pivot_node is left child of grand-parent of pivot_node
+       // Case A: Parent of partial_tree is left child of grand-parent of partial_tree
        if (parent == grandparent->left)
        {
-           TreeNode *uncle_pivot_node = grandparent->right;
+           TreeNode *uncle_partial_tree = grandparent->right;
 
 
-           if ((uncle_pivot_node != NULL) && (uncle_pivot_node->RedBlack == RED))
+           if ((uncle_partial_tree != NULL) && (uncle_partial_tree->RedBlack == RED))
            {
                verbose_printf (1," A1 Recolor");
                // Case 1: Uncle is red, only recoloring required
                grandparent->RedBlack = RED;
                parent->RedBlack = BLACK;
-               uncle_pivot_node->RedBlack = BLACK;
-               pivot_node = grandparent;
+               uncle_partial_tree->RedBlack = BLACK;
+               partial_tree = grandparent;
            } else {
 
               // Case 2: Do rotation in the opposite direction of which side of the parent we are on
-              if (pivot_node == parent->right)
+              if (partial_tree == parent->right)
               {
                  verbose_printf (1," Case A2: Left Rotate ");
                  LeftRotate(t, parent);
-                 pivot_node = parent;
-                 parent = pivot_node->parent;
+                 partial_tree = parent;
+                 parent = partial_tree->parent;
               }
               verbose_printf (1," Case A3: Right Rotate.");
-              //  pivot_node is left child so, do counter-rotate rotate (Case 3 is when we start in this state
+              //  partial_tree is left child so, do counter-rotate rotate (Case 3 is when we start in this state
               RightRotate(t, grandparent);
 
               int type = parent->RedBlack;
@@ -349,40 +349,40 @@ int FixUpTree (Tree *t, TreeNode *pivot_node)
               parent->RedBlack = BLACK;
               grandparent->RedBlack = RED;
               */
-              pivot_node = parent;
+              partial_tree = parent;
            }
            verbose_printf (1,"\n");
        }
-       // Case B: Parent of pivot_node is right child of grand-parent or pivot_node
+       // Case B: Parent of partial_tree is right child of grand-parent or partial_tree
        else
        {
-          TreeNode *uncle_pivot_node = grandparent->left;
+          TreeNode *uncle_partial_tree = grandparent->left;
 
 
-           if ((uncle_pivot_node != NULL) && (uncle_pivot_node->RedBlack == RED))
+           if ((uncle_partial_tree != NULL) && (uncle_partial_tree->RedBlack == RED))
            {
                verbose_printf (1,"B1 Recolor ");
                // Case 1: Uncle is red, only recoloring required
                grandparent->RedBlack = RED;
                parent->RedBlack = BLACK;
-               uncle_pivot_node->RedBlack = BLACK;
-               pivot_node = grandparent;
+               uncle_partial_tree->RedBlack = BLACK;
+               partial_tree = grandparent;
            } else {
 
               // Case 2: Do rotation in the opposite direction of which side of the parent we are on
-              if (pivot_node == parent->left)
+              if (partial_tree == parent->left)
               {
                  verbose_printf (1,"B2 Right Rotate ");
 
                  RightRotate(t, parent);
-                 pivot_node = parent;
-                 parent = pivot_node->parent;
+                 partial_tree = parent;
+                 parent = partial_tree->parent;
               }
 
 
               verbose_printf (1,"B3 Left Rotate");
 
-              // pivot_node is left child so, do counter-rotate rotate (Case 3 is when we start in this state)
+              // partial_tree is left child so, do counter-rotate rotate (Case 3 is when we start in this state)
               LeftRotate(t, grandparent);
 
               int type = parent->RedBlack;
@@ -394,7 +394,7 @@ int FixUpTree (Tree *t, TreeNode *pivot_node)
               grandparent->RedBlack = RED;
               */
 
-              pivot_node = parent;
+              partial_tree = parent;
            }
            verbose_printf (1,"\n");
        }

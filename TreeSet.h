@@ -8,7 +8,7 @@
 
  #define MAX_BITMAP_PER_NODE 64
 
-// #define TESTSET_PROFILE 1 // Enabling this will enable memory and node information dumps. NOT THREAD SAFE.
+#define TESTSET_PROFILE 1 // Enabling this will enable memory and node information dumps. NOT THREAD SAFE.
 
  struct Tree;
  struct TreeNode;

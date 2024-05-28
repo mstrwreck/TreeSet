@@ -2,8 +2,12 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <strings.h>
-#include <time.h>
+#include <time.h> // Included only to track duration of test
+#include <libgen.h> // filename manipulation
 #include "TreeSet.h"
+
+/* DataFilter - reads in a file of ISO 8601 dates in Zulu time or with a TZ adjustment, applies the adjustment to the time, then prints the original input to an output file
+(called <input filename>_output.txt ) as long as it is unique in the original file. */
 
 static unsigned int verbose_enabled = 0;
 
@@ -20,25 +24,28 @@ static void verbose_printf (unsigned int level, const char *format, ...)
 }
 
 // These types form the 2D array of centuries X years. The centuries are represented by an array indexed by the first
-// two numbers in the year. If a node insert occurs within a century, the years array is dynamically allocated using the year_range struct.
+// two numbers in the year. If a node insert occurs within a century, the years array is dynamically allocated using the century struct.
 
 // we add 1 to century range to allow for adjustments encountering year -1 or year 10000
-#define CENTURY_RANGE 101
-#define YEAR_RANGE 100
+#define CENTURY_INDEX 101
+#define CENTURY_RANGE 100
 
-typedef struct year_range{
-    struct Tree *year[YEAR_RANGE];
-} year_range;
+typedef struct century {
+    struct Tree *year[CENTURY_RANGE];
+} century;
 
-year_range *centuries[CENTURY_RANGE] = {NULL};
+century *centuries[CENTURY_INDEX] = {NULL};
 
 #ifdef TESTSET_PROFILE
 static size_t memory_usage = 0;
 #endif
 
-// Create key for bit for the TreeSet (year covered by arrays containing the TreeSet)
+/*(Create key for bit for the TreeSet (year covered by arrays containing the TreeSet struct) */
 static unsigned int MakeKey(int month, int day, int hour, int minute, int second)
 {
+   /*(Months fit within 4 bits,  day of the month and hour of the day fit within 5 bits, while
+      minute of hour and second within minute fit with 6 bits. In total, they fit within 26 bits.*/
+
    return (month<<22) + (day<<17) + (hour<<12) + (minute<<6) + second;
 }
 
@@ -54,14 +61,14 @@ unsigned int CheckInsertTSPresent (int year, int month, int day, int hour, int m
   int century_idx = (year+1) / 100;
   int year_idx = (year+1) % 100;
 
-   // Find or create the decade list and tree root for the given year
+   /* Find or create the decade struct and tree root for the given year */
    verbose_printf (2,"index year=%d so Century idx=%d[%p], year_idx=%d\n", year+1, century_idx, centuries[century_idx], year_idx);
    if (centuries[century_idx] == NULL)
    {
-      centuries[century_idx] = malloc(sizeof(year_range));
-      memset (centuries[century_idx], 0, sizeof(year_range));
+      centuries[century_idx] = malloc(sizeof(century));
+      memset (centuries[century_idx], 0, sizeof(century));
       #ifdef TESTSET_PROFILE
-      memory_usage += sizeof(year_range);
+      memory_usage += sizeof(century);
       #endif // TESTSET_PROFILE
 
       verbose_printf (2,"allocated a year range at %d, %p\n", century_idx, centuries[century_idx]);
@@ -83,6 +90,8 @@ unsigned int CheckInsertTSPresent (int year, int month, int day, int hour, int m
    return already_present;
 }
 
+/* Verify the buffer passed in is a ISO 8501 Zulu or TimeZone format before setting the year,month,day,hour,minute, and second fields to the
+ * adjusted Zulu time. If the time is adjusted,  tz_adjusted will be set to 1. Otherwise, a 0 denoting no adjustment. Return true if the line parsed, false otherwise. */
 int parse_timestamp (char * buffer, unsigned int length, int *year, int *month, int *day, int *hour, int *minute, int *second, int *tz_adjusted)
 {
    char abstract_format[30] = {0};
@@ -94,7 +103,7 @@ int parse_timestamp (char * buffer, unsigned int length, int *year, int *month, 
 
    if (buffer)
    {
-     // format must fall betwen these lengths.
+     // buffer must fall between these lengths to be valid.
      if ((length < 20) || (length > 25))
      {
          parse_failed = 1;
@@ -125,8 +134,11 @@ int parse_timestamp (char * buffer, unsigned int length, int *year, int *month, 
      }
      verbose_printf (2,"Format str:%s\n", abstract_format);
 
-     // Check against the valid ISO 8601 patterns per problem definition.
-     parse_failed = !((strcmp(abstract_format, "4-2-2T2:2:2+2:2") == 0) || (strcmp(abstract_format, "4-2-2T2:2:2-2:2") == 0) || (strcmp(abstract_format, "4-2-2T2:2:2Z") == 0));
+     if (!parse_failed)
+     {
+        // Check against the valid ISO 8601 patterns per problem definition.
+        parse_failed = !((strcmp(abstract_format, "4-2-2T2:2:2+2:2") == 0) || (strcmp(abstract_format, "4-2-2T2:2:2-2:2") == 0) || (strcmp(abstract_format, "4-2-2T2:2:2Z") == 0));
+     }
 
      if (!parse_failed && sscanf (buffer, "%4d-%2d-%2dT%2d:%2d:%2d%s", year, month, day, hour, minute, second, tzd))
      {
@@ -194,6 +206,10 @@ int parse_timestamp (char * buffer, unsigned int length, int *year, int *month, 
                }
                verbose_printf (2,"Adjusted year:%d month:%d day:%d, hour:%d minute:%d, second:%d\n\n", *year, *month, *day, *hour, *minute, *second);
             }
+            else
+            {
+                parse_failed = 1;
+            }
          }
          else
          {
@@ -209,7 +225,8 @@ int main (int argc , char **argv)
     FILE *fp_in;
     FILE *fp_out;
     char buffer[255];
-    char filename[300]="test.txt";
+    char input_filename[300]="test.txt";
+    char output_filename[300] = "output.txt";
     int year, month, day, hour, minute, second, tz_adjusted;
 
     unsigned int ts_handled = 0;
@@ -221,7 +238,7 @@ int main (int argc , char **argv)
     for (int i = 1;i < argc; i++) {
         if (argv[i][0] != '-')
         {
-           strcpy (filename, argv[i]);
+           strcpy (input_filename, argv[i]);
         }
         else
         {
@@ -239,16 +256,22 @@ int main (int argc , char **argv)
        SetTSVerbose(verbose_enabled);
     }
 
-    printf ("processing file %s\n", filename);
-    fp_in=fopen(filename, "r");
+    fp_in=fopen(input_filename, "r");
 
     if (!fp_in)
     {
-        fprintf(stderr, "Input file %s cannot be opened:%s\n", filename, strerror(errno));
+        fprintf(stderr, "Input file %s cannot be opened:%s\n", input_filename, strerror(errno));
         exit(errno);
     }
 
-    fp_out = fopen ("test_output.txt", "w");
+    strcpy(output_filename, basename(input_filename));
+    char *output_ext = strrchr(output_filename, '.');
+    if (output_ext)
+        *output_ext = 0;
+    strcat(output_filename, "_output.txt");
+     printf ("Filtering file '%s' into '%s'.\n", input_filename, output_filename);
+
+    fp_out = fopen (output_filename, "w");
 
     if (!fp_out)
     {
@@ -258,6 +281,7 @@ int main (int argc , char **argv)
     }
     printf ("\n");
 
+    // Used to measure rough duration of test only.
     clock_t start_time = clock();
 
     while (fgets(buffer, 255, (FILE*)fp_in))
@@ -267,6 +291,7 @@ int main (int argc , char **argv)
 
         lines_in_file++;
 
+        // remove any extra return lines
         if ((len>0) && (buffer[len-1]=='\n'))
         {
            buffer[len-1] = 0;
@@ -321,37 +346,40 @@ int main (int argc , char **argv)
     fclose(fp_out);
 
 #ifdef TESTSET_PROFILE
-    printf ("DataFilter: RunTime:%f Mem Usage: %Iu TS Mem Usage:%Iu for %d nodes in system \n (%d lines of input => %d failed parse, %d ts parsed => %d written to file, %d discarded).\n", run_time, memory_usage, GetTSMemory(), GetTSNodes(),
+    printf ("DataFilter: RunTime:%f Mem Usage: %Iu TS Mem Usage:%Iu for %d nodes in system in %d trees.\n (%d lines of input => %d failed parse, %d ts parsed => %d written to file, %d discarded).\n",
+            run_time, memory_usage, GetTSMemory(), GetTSNodes(), GetTSTrees(),
             lines_in_file, parse_failures, ts_handled, written_to_file, duplicates_found);
 #else
     printf ("DataFilter: RunTime: %f \n %d lines of input => %d failed parse, %d ts parsed => %d written to file, %d discarded).\n", run_time, lines_in_file, parse_failures, ts_handled, written_to_file, duplicates_found);
 
 #endif // TESTSET_PROFILE
 
-
-    for (int i=0;i<CENTURY_RANGE;i++)
+    int print_once = 0;
+    for (int i=0;i<CENTURY_INDEX;i++)
     {
 
        if (centuries[i] != NULL)
        {
-          for (int j=0;j<YEAR_RANGE;j++)
+          for (int j=0;j<CENTURY_RANGE;j++)
           {
              if (centuries[i]->year[j])
              {
-                if (verbose_enabled > 0)
+                if ((verbose_enabled > 0) || (!print_once))
                 {
                    printf ("\nTree %d=>", ((i*100)+j)-1);
-                   PrintTree (centuries[i]->year[j]);
+                   //PrintTree (centuries[i]->year[j]);
                    TreeInfo(centuries[i]->year[j]);
+                   print_once = 1;
 
                 }
+
                 DestroyTree(centuries[i]->year[j]);
 
              }
           }
           free(centuries[i]);
           #ifdef TESTSET_PROFILE
-          memory_usage -= sizeof(year_range);
+          memory_usage -= sizeof(century);
           #endif
        }
     }

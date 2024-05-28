@@ -14,10 +14,10 @@
  struct TreeNode;
 
 
-// Create a tree structure that will contain the bitmap elements. The sizing per node can be manipulated to allow for operations over a subset of the bitmap
-// as well as reduce the overall number of nodes used in the tree. IE: If a node can hold 60 bits worth of a bitmap, then a bitmap range of 2,400 bits would take
-// 40 nodes. Practically, this will probably be scaled by the smallest 'factor' determining the total range. For example, a bitmap of seconds per hour per day would
-// make sense to have 60 bits per node.
+/* Create a tree structure that will contain the bitmap elements. The sizing per node can be manipulated to allow for operations over a subset of the bitmap
+   as well as reduce the overall number of nodes used in the tree. IE: If a node can hold 60 bits worth of a bitmap, then a bitmap range of 2,400 bits would take
+   40 nodes. Practically, this will probably be scaled by the smallest 'factor' determining the total range. For example, a bitmap of seconds per hour per day would
+   make sense to have 60 bits per node. */
 
 struct Tree *CreateTree (unsigned int bitmap_size_per_node);
 void DestroyTree(struct Tree *tree);
@@ -25,8 +25,9 @@ void DestroyTree(struct Tree *tree);
 unsigned int CheckBit (struct Tree *tree, unsigned int total_bit_offset);
 void SetBit(struct Tree *tree, unsigned int total_bit_offset, unsigned int value, unsigned int *already_set);
 
-// These Interfaces allow for creation and handling of nodes and their bitmap subsets
-// indpendently of the total bitmap range..useful if your entire range is bigger than can be represented in 32 bits.
+/*(These Interfaces allow for creation and handling of nodes and their bitmap subsets
+  independently of the total bitmap range..useful if your entire range is bigger than can be represented in 32 bits.
+   Value will set a bit as 1 for any value > 0. Already_set is used if application wants to know if the bit was set prior to this call. */
 
 struct TreeNode *FindNode (struct Tree *tree, int unsigned key);
 struct TreeNode *FindOrInsertNode (struct Tree *tree, unsigned int key);
@@ -35,24 +36,24 @@ unsigned int SetSubBit(struct Tree *tree, struct TreeNode *tree_node, unsigned i
 void ClearSubBits(struct Tree *tree, struct TreeNode *tree_node);
 
 
-// Utility to dump the tree.
+/* Utility to dump the tree. */
 void PrintTree (struct Tree *tree);
 
-// Print tree statistics
+/* Print tree statistics */
 void TreeInfo (struct Tree *tree);
 
-// test interface to run a simple set of functions
+/* test interface to run a simple set of functions */
 void example_test();
 
-// Utility to enable debug output.
+/* Utility to enable debug output. */
 void SetTSVerbose (unsigned int enable_disable);
 
 #ifdef TESTSET_PROFILE
 
-// Utility to dump memory usage and allocated nodes of system (not thread safe!)
+/* Utility to dump memory usage and allocated nodes of system (not thread safe!) */
 size_t GetTSMemory();
 unsigned int GetTSNodes();
-
+unsigned int GetTSTrees();
 #endif
 
 

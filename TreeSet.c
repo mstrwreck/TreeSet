@@ -12,6 +12,7 @@ static unsigned int verbose_enabled = 0;
 #ifdef TESTSET_PROFILE
 static size_t memory_usage = 0;
 static unsigned int total_nodes = 0;
+static unsigned int total_trees = 0;
 #endif
 
 typedef struct TreeNode {
@@ -66,8 +67,6 @@ static void memory_free (void *memory_to_free, size_t size)
 }
 
 
-
-
 void SetTSVerbose (unsigned int enable_disable)
 {
   verbose_enabled = (enable_disable % 2);
@@ -84,7 +83,7 @@ unsigned int CountBitSize(unsigned int value)
    return count;
 }
 
-/* Printing a node using a recursive helper function */
+/* PrintTree, PrintTreeHelper - Printing a tree via PrintTree (using PrintTreeHelper recursively) outputs basic tree attributes an in-order print of the tree. */
 void PrintTreeHelper (TreeNode *node, int depth, Tree *tree, char *str)
 {
     if (node)
@@ -109,12 +108,12 @@ void PrintTreeHelper (TreeNode *node, int depth, Tree *tree, char *str)
 
 }
 
-/* Print tree structure */
 void PrintTree (Tree *tree)
 {
     if (tree)
     {
-        printf ("Tree size:%d perNodeBitsetSize:%d perNodeBitsetByteSize:%d BitsForIdx:%d\n", tree->size, tree->bitmap_size_per_node, tree->bitmap_size_in_bytes, tree->bitmap_idx_size);
+        printf ("Tree size:%d perNodeBitsetSize:%d perNodeBitsetByteSize:%d BitsForIdx:%d\n ",
+                tree->size, tree->bitmap_size_per_node, tree->bitmap_size_in_bytes, tree->bitmap_idx_size);
         PrintTreeHelper(tree->root, 0, tree, "root");
     }
     else
@@ -123,11 +122,13 @@ void PrintTree (Tree *tree)
     }
 }
 
+/* TreeInfo, FindMaxDepth, TreeInfoHelper - Investigating a tree via TreeInfo (using the TreeInfoHelper procedure recursively) will output basic tree statistics. */
 
 int TreeInfoHelper(TreeNode *node, unsigned int depth)
 {
     int left_depth = 0;
     int right_depth = 0;
+
     if (node->left)
     {
         left_depth = TreeInfoHelper(node->left, depth+1);
@@ -135,12 +136,32 @@ int TreeInfoHelper(TreeNode *node, unsigned int depth)
 
     if (node->right)
     {
-        right_depth = TreeInfoHelper(node->left, depth+1);
+        right_depth = TreeInfoHelper(node->right, depth+1);
     }
     return (left_depth + right_depth + depth);
 }
 
-/* Print Tree Info per average dept of tree */
+/* Finds maximum depth of a tree's left and right sides. */
+unsigned int FindMaxDepth (TreeNode *node, unsigned int depth)
+{
+   if (!node)
+   {
+       //verbose_printf (1, "@leaf depth:%d\n", depth);
+       return (depth);
+   }
+   else
+   {
+       unsigned int left_depth = FindMaxDepth(node->left, depth+1);
+       unsigned int right_depth = FindMaxDepth(node->right, depth+1);
+       verbose_printf (3, "At node %d - left node tree is depth %d, right node tree is depth %d.\n", node->key, left_depth, right_depth);
+       if (left_depth > right_depth)
+           return left_depth;
+       else
+           return right_depth;
+   }
+}
+
+/* Print Tree Info per average depth of tree and node memory allocation if TESTSET_PROFILE is enabled. */
 void TreeInfo (Tree *tree)
 {
    unsigned int running_depth_sum = 0;
@@ -148,11 +169,22 @@ void TreeInfo (Tree *tree)
    {
       running_depth_sum = TreeInfoHelper(tree->root, 0);
       if (tree->size > 1)
-        printf ("size:%d Avg depth:%f\n", tree->size, (double) running_depth_sum/tree->size);
+      {
+             printf ("size:%d left_depth:%d right_depth:%d Avg depth:(%d/%d) = %f\n", tree->size, FindMaxDepth(tree->root->left, 0), FindMaxDepth(tree->root->right, 0), running_depth_sum, tree->size, (double) running_depth_sum/tree->size);
+#ifdef TESTSET_PROFILE
+             printf ("Tree header size:%I64d TreeNode size: %I64d+%d (node+payload)\n", sizeof(Tree), sizeof(TreeNode), tree->bitmap_size_in_bytes);
+#endif
+      }
    }
 }
 
-/* Create the base tree structure that will contain all nodes and return a reference to the tree. */
+
+
+
+
+/* CreateTree - Create and initialized the base tree structure that will contain all nodes and return a reference to the tree.
+ *bitmap_size_per_node is the size of the allocated bitmap window onto the larger virtual bitmap */
+
 struct Tree *CreateTree (unsigned int bitmap_size_per_node)
 {
     struct Tree *tree = NULL;
@@ -167,16 +199,19 @@ struct Tree *CreateTree (unsigned int bitmap_size_per_node)
            tree->bitmap_size_in_bytes = (bitmap_size_per_node + 7) / 8;
            tree->bitmap_idx_size = CountBitSize(bitmap_size_per_node);
            tree->root = NULL;
+           #ifdef TESTSET_PROFILE
+           total_trees++;
+           #endif
         }
     }
     else
     {
-        printf("bitmap size of %d is invalid, must be between 0 and 64 bits.\n", bitmap_size_per_node);
+        printf("bitmap size of %d is invalid, must be between 0 and %d bits.\n", bitmap_size_per_node, MAX_BITMAP_PER_NODE);
     }
     return tree;
 }
 
-/* Clean up code to destroy a tree and subtending nodes via recursion */
+/* DestroyNode, DestroyTree - Procedures to destroy tree nodes and tree containers */
 void DestroyNode (Tree *tree, TreeNode *tree_node)
 {
     if (tree && tree_node)
@@ -201,155 +236,181 @@ void DestroyTree(Tree *tree)
     {
        DestroyNode(tree, tree->root);
        memory_free(tree, sizeof(Tree));
+       #ifdef TESTSET_PROFILE
+       total_trees--;
+       #endif
+
     }
 }
 
-/* Internal utilities for RedBlack Tree balancing on a given node in the tre. Note delete is not implemented as bitset may only grow. */
-void RightRotate (Tree *t, TreeNode *temp)
+/* RightRotate, LeftRotate, FixUpTree - Internal utilities for RedBlack Tree balancing on a given node in the tre. Note delete is not implemented as bitset may only grow. */
+void RightRotate (Tree *t, TreeNode *pivot_node)
 {
-   TreeNode *left = temp->left;
-   temp->left = left->right;
-   if (temp->left)
-       temp->left->parent = temp;
-   left->parent = temp->parent;
+   TreeNode *left = pivot_node->left;
+   pivot_node->left = left->right;
+   if (pivot_node->left)
+       pivot_node->left->parent = pivot_node;
+   left->parent = pivot_node->parent;
 
-   if (!temp->parent)
+   if (!pivot_node->parent)
    {
        t->root = left;
    }
-   else if (temp == temp->parent->left)
+   else if (pivot_node == pivot_node->parent->left)
    {
-       temp->parent->left = left;
+       pivot_node->parent->left = left;
    }
    else
+
    {
-       temp->parent->right = left;
+       pivot_node->parent->right = left;
    }
-   left->right = temp;
-   temp->parent = left;
+   left->right = pivot_node;
+   pivot_node->parent = left;
 }
 
-void LeftRotate (Tree *t, TreeNode *temp)
+void LeftRotate (Tree *t, TreeNode *pivot_node)
 {
-   TreeNode *right = temp->right;
-   temp->right = right->left;
-   if (temp->right)
-       temp->right->parent = temp;
-   right->parent = temp->parent;
+   TreeNode *right = pivot_node->right;
+   pivot_node->right = right->left;
+   if (pivot_node->right)
+       pivot_node->right->parent = pivot_node;
+   right->parent = pivot_node->parent;
 
-   if (!temp->parent)
+   if (!pivot_node->parent)
    {
        t->root = right;
    }
-   else if (temp == temp->parent->left)
+   else if (pivot_node == pivot_node->parent->left)
    {
-       temp->parent->left = right;
+       pivot_node->parent->left = right;
    }
    else
    {
-       temp->parent->right = right;
+       pivot_node->parent->right = right;
    }
-   right->left = temp;
-   temp->parent = right;
+   right->left = pivot_node;
+   pivot_node->parent = right;
 }
 
-void FixUpTree (Tree *t, TreeNode *pt)
+int FixUpTree (Tree *t, TreeNode *pivot_node)
 {
    TreeNode *parent = NULL;
    TreeNode *grandparent = NULL;
+   int work_done = 0;
 
     verbose_printf (1,"Root = %p\n", t->root);
-    while ((pt != t->root) && (pt->RedBlack != BLACK) && (pt->parent->RedBlack == RED))
+    while ((pivot_node != t->root) && (pivot_node->RedBlack != BLACK) && (pivot_node->parent->RedBlack == RED))
     {
-
-       parent = pt->parent;
-       grandparent = pt->parent->parent;
+       work_done = 1;
+       parent = pivot_node->parent;
+       grandparent = pivot_node->parent->parent;
 
        if (!parent || !grandparent)
        {
           break;
        }
 
-       verbose_printf (1," pt:%p, parent:%p, grandparent:%p\n", pt, parent, grandparent);
-       // Case A: Parent of pt is left child of grand-parent of pt
+       verbose_printf (1," pivot_node:%p[%d], parent:%p[%d], grandparent:%p[%d]\n", pivot_node, (pivot_node!=NULL)?pivot_node->key:-1, parent,
+                        (parent!=NULL)?parent->key:-1, grandparent, (grandparent!=NULL)?grandparent->key:-1);
+       // Case A: Parent of pivot_node is left child of grand-parent of pivot_node
        if (parent == grandparent->left)
        {
-           TreeNode *uncle_pt = grandparent->right;
+           TreeNode *uncle_pivot_node = grandparent->right;
 
 
-           if ((uncle_pt != NULL) && (uncle_pt->RedBlack == RED))
+           if ((uncle_pivot_node != NULL) && (uncle_pivot_node->RedBlack == RED))
            {
                verbose_printf (1," A1 Recolor");
                // Case 1: Uncle is red, only recoloring required
                grandparent->RedBlack = RED;
                parent->RedBlack = BLACK;
-               uncle_pt->RedBlack = BLACK;
-               pt = grandparent;
+               uncle_pivot_node->RedBlack = BLACK;
+               pivot_node = grandparent;
            } else {
+
               // Case 2: Do rotation in the opposite direction of which side of the parent we are on
-              if (pt == parent->right)
+              if (pivot_node == parent->right)
               {
-                 verbose_printf (1," Case A2 ");
+                 verbose_printf (1," Case A2: Left Rotate ");
                  LeftRotate(t, parent);
-                 pt = parent;
-                 parent = pt->parent;
+                 pivot_node = parent;
+                 parent = pivot_node->parent;
               }
-              verbose_printf (1," Case A3.");
-              //  pt is left child so, do counter-rotate rotate (Case 3 is when we start in this state
+              verbose_printf (1," Case A3: Right Rotate.");
+              //  pivot_node is left child so, do counter-rotate rotate (Case 3 is when we start in this state
               RightRotate(t, grandparent);
+
               int type = parent->RedBlack;
               parent->RedBlack = grandparent->RedBlack;
               grandparent->RedBlack = type;
-              pt = parent;
+
+              /*
+              parent->RedBlack = BLACK;
+              grandparent->RedBlack = RED;
+              */
+              pivot_node = parent;
            }
            verbose_printf (1,"\n");
        }
-       // Case B: Parent of pt is right child of grand-parent or pt
+       // Case B: Parent of pivot_node is right child of grand-parent or pivot_node
        else
        {
-          TreeNode *uncle_pt = grandparent->left;
+          TreeNode *uncle_pivot_node = grandparent->left;
 
 
-           if ((uncle_pt != NULL) && (uncle_pt->RedBlack == RED))
+           if ((uncle_pivot_node != NULL) && (uncle_pivot_node->RedBlack == RED))
            {
                verbose_printf (1,"B1 Recolor ");
                // Case 1: Uncle is red, only recoloring required
                grandparent->RedBlack = RED;
                parent->RedBlack = BLACK;
-               uncle_pt->RedBlack = BLACK;
-               pt = grandparent;
+               uncle_pivot_node->RedBlack = BLACK;
+               pivot_node = grandparent;
            } else {
+
               // Case 2: Do rotation in the opposite direction of which side of the parent we are on
-              if (pt == parent->left)
+              if (pivot_node == parent->left)
               {
-                 verbose_printf (1,"B2 ");
+                 verbose_printf (1,"B2 Right Rotate ");
 
                  RightRotate(t, parent);
-                 pt = parent;
-                 parent = pt->parent;
+                 pivot_node = parent;
+                 parent = pivot_node->parent;
               }
 
-              verbose_printf (1,"B3 ");
 
-              // pt is left child so, do counter-rotate rotate (Case 3 is when we start in this state)
+              verbose_printf (1,"B3 Left Rotate");
+
+              // pivot_node is left child so, do counter-rotate rotate (Case 3 is when we start in this state)
               LeftRotate(t, grandparent);
+
               int type = parent->RedBlack;
               parent->RedBlack = grandparent->RedBlack;
               grandparent->RedBlack = type;
-              pt = parent;
+
+              /*
+              parent->RedBlack = BLACK;
+              grandparent->RedBlack = RED;
+              */
+
+              pivot_node = parent;
            }
            verbose_printf (1,"\n");
        }
     }
 
-    //ensure root node is always black, even if rotated.
+    //ensure root node is always black after rotations.
     if (t->root && (t->root->RedBlack == RED))
     {
         t->root->RedBlack = BLACK;
     }
+    return work_done;
 }
 
-/* Given a valid tree, attempt to lookup a node per the key */
+/* FindOrInsertNode - Given a valid tree, attempt to find or insert the node reference passed in. The helper will track the found node (if not inserting) in nodeFound (if given),
+insert_depth will track the depth the node is inserted at (if variable reference is not NULL), and depth is a helper field to track how far down the tree we go. */
+
 TreeNode *FindNodeHelper (TreeNode *node, int key)
 {
     if (node)
@@ -371,35 +432,31 @@ TreeNode *FindNode (Tree *tree, unsigned int key)
    return FindNodeHelper(tree->root, key);
 }
 
-/* Given a valid tree, attempt to find or insert the node supplied */
 
-TreeNode *FindOrInsertNodeHelper (TreeNode *node, TreeNode *node_to_insert, TreeNode **nodeFound, int depth)
+
+TreeNode *FindOrInsertNodeHelper (TreeNode *node, TreeNode *node_to_insert, TreeNode **nodeFound, unsigned int *insert_depth, unsigned int depth)
 {
-    verbose_printf (1,"Input key is %d, checking %d\n", node_to_insert->key, (node==NULL)?-1:node->key);
     if (node == NULL)
     {
+        if (insert_depth)
+           *insert_depth = depth-1;
         return node_to_insert;
-    }
-    else if (node_to_insert->key == node->key)
-    {
-        verbose_printf (1,"Set node found to %p\n", node);
-        *nodeFound = node;
     }
     else if (node_to_insert->key < node->key)
     {
-        verbose_printf (1,"Checking node->left\n");
-        node->left = FindOrInsertNodeHelper (node->left, node_to_insert, nodeFound, depth+1);
+        node->left = FindOrInsertNodeHelper (node->left, node_to_insert, nodeFound, insert_depth, depth+1);
         if (node->left == node_to_insert)
            node_to_insert->parent = node;
-        verbose_printf (1,"Node->left set to %p\n", node->left);
     }
     else if (node_to_insert->key > node->key)
     {
-        verbose_printf (1,"Checking node->right\n");
-        node->right = FindOrInsertNodeHelper (node->right, node_to_insert, nodeFound, depth+1);
+        node->right = FindOrInsertNodeHelper (node->right, node_to_insert, nodeFound, insert_depth, depth+1);
         if (node->right == node_to_insert)
            node_to_insert->parent = node;
-        verbose_printf (1,"Node->right set to %p\n", node->right);
+    }
+    else if ((node_to_insert->key == node->key) && (nodeFound))
+    {
+        *nodeFound = node;
     }
     return node;
 }
@@ -408,6 +465,8 @@ TreeNode *FindOrInsertNode (struct Tree *tree, unsigned int key)
 {
   TreeNode *found_node = NULL; // This will track if the node is found and return a pointer to it. If it is NULL, this means node created was inserted.
   TreeNode *node_to_insert = NULL;
+
+  unsigned int insert_depth = 0;
 
   if (tree)
   {
@@ -445,11 +504,17 @@ TreeNode *FindOrInsertNode (struct Tree *tree, unsigned int key)
       else
       {
          node_to_insert->RedBlack = RED;
-         FindOrInsertNodeHelper (tree->root, node_to_insert, &found_node, 0);
+         FindOrInsertNodeHelper (tree->root, node_to_insert, &found_node, &insert_depth, 1);
       }
   }
 
-  verbose_printf (1,"found node on insert:%p\n", found_node);
+  if (verbose_enabled >= 3)
+  {
+     printf ("PreFix Tree (after %d %s at depth %d):\n===========\n", node_to_insert->key, found_node?"found":"inserted", insert_depth);
+     PrintTree (tree);
+  }
+
+  // If no node found, return node_to_insert as the found node and update tree size.
   if (found_node == NULL)
   {
      found_node = node_to_insert;
@@ -460,12 +525,17 @@ TreeNode *FindOrInsertNode (struct Tree *tree, unsigned int key)
 
      // Check Red/Black balance, if we are deep enough in the tree. As root is black,
      // any child of root is good on insert.
-     FixUpTree(tree, node_to_insert);
-     if (verbose_enabled)
+     int fixed = FixUpTree(tree, node_to_insert);
+
+     if ((verbose_enabled >= 3) && fixed)
+     {
+        printf ("PostFix Tree:\n============\n");
         PrintTree (tree);
+     }
   }
   else
   {
+      // this entity was already insert into the tree. Release memory for the insert attempt and return the node found.
       verbose_printf (1,"Found node:%p\n", found_node);
       if (node_to_insert->payload)
         memory_free(node_to_insert->payload, tree->bitmap_size_in_bytes);
@@ -476,7 +546,9 @@ TreeNode *FindOrInsertNode (struct Tree *tree, unsigned int key)
 }
 
 
-/* If a tree node has been found, allow access to the internal bitmap with a bit offset within range of the bitmap within the node */
+/* CheckSubBits, SetSubBits - If a tree node has been found, allow access to the internal bitmap with a bit offset within range of the bitmap within the node.
+    CheckSubBit expects a bit range from 0 to the size of the bits stored per notde, as dones SetSubBit. already_present will return true of the bit was
+    already set before the interface was called. */
 unsigned int CheckSubBit(Tree *tree, TreeNode *tree_node, unsigned int sub_bit_offset)
 {
     unsigned int return_code = 0;
@@ -515,6 +587,7 @@ unsigned int SetSubBit(Tree * tree, TreeNode *tree_node, unsigned int sub_bit_of
     return return_code;
 }
 
+/* ClearSubBits - Set all bits from 0 to the number of bits per node to 0 */
 void ClearSubBits(Tree *tree, TreeNode *tree_node)
 {
     if (tree && tree_node)
@@ -523,7 +596,9 @@ void ClearSubBits(Tree *tree, TreeNode *tree_node)
     }
 }
 
-/* If a tree is valid, allow access to the internal bitmap with a bit offset within total bit offset range (practically (key << bitmap_size_per_node) | sub_bit_offset) */
+/* CheckBit, SetBit - If a tree is valid, allow access to the internal bitmap with a bit offset within total bit offset range (effectively (key << bitmap_size_per_node) | sub_bit_offset).
+ This is the standard access to the TreeSet unless the key range independent of the sub_bit_index plus the sub_bit_range is greater than 32 bits. It uses the CheckSubBit and SetSubBit interfaces
+  introduced previously. */
 
 unsigned int CheckBit (Tree *tree, unsigned int total_bit_offset)
 {
@@ -556,7 +631,7 @@ void SetBit (Tree *tree, unsigned int total_bit_offset, unsigned int value, unsi
 void example_test()
 {
    Tree *test_tree = CreateTree(60);
-   PrintTree(test_tree);
+   // PrintTree(test_tree);
    if (test_tree)
    {
           TreeNode *node = FindOrInsertNode(test_tree, 10);
@@ -571,6 +646,8 @@ void example_test()
           printf ("Bit 2 is %d, bit 3 is %d\n", CheckSubBit(test_tree, node, 2), CheckSubBit(test_tree, node, 3));
           ClearSubBits(test_tree, node);
           printf ("After clear Bit 2 is %d, bit 3 is %d\n", CheckSubBit(test_tree, node, 2), CheckSubBit(test_tree, node, 3));
+          FindOrInsertNode(test_tree, 9);
+
           FindOrInsertNode(test_tree, 1);
           FindOrInsertNode(test_tree, 2);
           FindOrInsertNode(test_tree, 3);
@@ -579,9 +656,23 @@ void example_test()
           FindOrInsertNode(test_tree, 6);
           FindOrInsertNode(test_tree, 7);
           FindOrInsertNode(test_tree, 8);
-          FindOrInsertNode(test_tree, 9);
+
           FindOrInsertNode(test_tree, 10);
+          FindOrInsertNode(test_tree, 11);
+          FindOrInsertNode(test_tree, 12);
+          FindOrInsertNode(test_tree, 13);
+          FindOrInsertNode(test_tree, 14);
+          FindOrInsertNode(test_tree, 15);
+          FindOrInsertNode(test_tree, 16);
+          FindOrInsertNode(test_tree, 17);
+          FindOrInsertNode(test_tree, 18);
+          FindOrInsertNode(test_tree, 19);
+          FindOrInsertNode(test_tree, 20);
+          FindOrInsertNode(test_tree, 21);
+          FindOrInsertNode(test_tree, 22);
           PrintTree(test_tree);
+          printf ("\nTreeInfo:\n");
+          TreeInfo(test_tree);
    }
 }
 
@@ -597,6 +688,11 @@ size_t GetTSMemory()
 unsigned int GetTSNodes()
 {
     return total_nodes;
+}
+
+unsigned int GetTSTrees()
+{
+    return total_trees;
 }
 
 
